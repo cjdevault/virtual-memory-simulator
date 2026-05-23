@@ -2,6 +2,8 @@
 
 A demand-paging simulator that replays memory traces and compares four page-replacement policies under a fixed number of physical frames.
 
+---
+
 ## Overview
 
 `vmsim` reads a **lackey-format** trace (Valgrind), maps each access to a **16 KiB** page, and simulates a single-level page table with a configurable frame count. On each page fault it applies one of **OPT**, **CLOCK**, **Rand**, or **NRU** to choose a victim, tracks **dirty** pages for write-back I/O, and prints per-access events plus a summary.
@@ -29,7 +31,7 @@ OPT uses future knowledge of the trace (theoretical lower bound). CLOCK, Rand, a
 
 - **GCC** with C11 support
 - **GNU Make**
-- Memory trace files in lackey format (course-provided `gcc.trace` / `ls.trace` are **not** included in this repo due to size; use local copies for full experiments)
+- For full benchmarks: decompress bundled traces with `gunzip -k gcc.trace.gz ls.trace.gz` (creates `gcc.trace` and `ls.trace`)
 
 ---
 
@@ -89,7 +91,8 @@ The **size** field is parsed but ignored; only the page number matters.
 ./vmsim -n 2 -a opt test.trace
 ./vmsim -n 2 -a clock test_dirty.trace
 
-# Report-style runs (requires course traces on disk)
+# Report-style runs (decompress gcc.trace.gz / ls.trace.gz first)
+gunzip -k gcc.trace.gz ls.trace.gz
 ./vmsim -q -n 8  -a opt   gcc.trace
 ./vmsim -q -n 16 -a clock gcc.trace
 ./vmsim -q -n 32 -a rand  gcc.trace
@@ -141,16 +144,29 @@ Classifies each frame by **(R, D)** into four NRU classes; evicts from the **low
 
 ```text
 project5/
-├── README.md           # This file
-├── Makefile            # Build vmsim
-├── vmsim.c             # Simulator implementation
-├── test.trace          # Minimal sample trace
-├── test_dirty.trace    # Sample trace with stores (dirty pages)
-├── report.tex          # LaTeX report (Overleaf-ready)
-└── REPORT_OUTLINE.md   # Report draft, tables, and methodology notes
+├── README.md                  # This file
+├── Makefile                   # Build vmsim
+├── vmsim.c                    # Simulator source
+├── vmsim                      # Compiled binary (after make)
+│
+├── test.trace                 # Minimal sample trace
+├── test_dirty.trace           # Sample trace with stores (dirty pages)
+├── gcc.trace.gz               # Valgrind lackey trace — gcc (~1.7M accesses)
+├── ls.trace.gz                # Valgrind lackey trace — ls (~766K accesses)
+│
+├── report.tex                 # LaTeX report source (Overleaf-ready)
+├── REPORT_OUTLINE.md          # Report draft, tables, methodology notes
+├── REPORT_OUTLINE.pdf         # Exported outline / draft PDF
+├── CSc452Project5Report.pdf   # Final submitted report
+├── gcc_chart.pdf              # Page faults vs frames — gcc.trace
+├── ls_chart.pdf               # Page faults vs frames — ls.trace
 ```
 
-Large course traces (`gcc.trace`, `ls.trace`) are intentionally omitted from the repository. Obtain them from the course materials and place them locally for full benchmarks.
+**Traces:** `vmsim` reads plain `.trace` files. Decompress before running full experiments:
+
+```bash
+gunzip -k gcc.trace.gz ls.trace.gz
+```
 
 ---
 
@@ -158,7 +174,7 @@ Large course traces (`gcc.trace`, `ls.trace`) are intentionally omitted from the
 
 The written report compares all four algorithms on **`gcc.trace`** (~1.71M accesses) and **`ls.trace`** (~766K accesses) at frame counts **8, 16, 32, 64**. NRU experiments use **`-r 1000`**.
 
-See **`REPORT_OUTLINE.md`** for measured fault counts, fault ratios vs OPT, disk-write tables, and analysis notes. **`report.tex`** is the formatted version for PDF export (add chart PDFs under `figures/` if using Overleaf).
+See **`REPORT_OUTLINE.md`** for measured fault counts, fault ratios vs OPT, disk-write tables, and analysis notes. **`report.tex`** is the LaTeX source; **`CSc452Project5Report.pdf`** is the final report. Charts **`gcc_chart.pdf`** and **`ls_chart.pdf`** are included for the results section.
 
 ### Sample results (`gcc.trace`, page faults)
 
