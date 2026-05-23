@@ -1,0 +1,267 @@
+% =============================================================================
+% CSc 452 — Project 5: Virtual Memory Simulator (Overleaf-ready)
+% -----------------------------------------------------------------------------
+% In Overleaf: Menu -> Upload -> add your chart PDFs into folder `figures/`
+%   Recommended names (rename from Google Sheets export if needed):
+%     figures/gcc_chart.pdf
+%     figures/ls_chart.pdf
+% Compile with: pdfLaTeX or XeLaTeX (either works for this file)
+% =============================================================================
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float} % provides [H] to pin figures (avoid floats drifting from § Figures)
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{siunitx}
+\sisetup{detect-all}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible
+}
+
+% Fill these in:
+\newcommand{\AuthorName}{Your Name Here}
+\newcommand{\CourseTerm}{CSc 452 -- Spring 2026}
+\newcommand{\ReportDate}{\today}
+
+\title{Virtual Memory Simulator:\\
+       Comparison of Page Replacement Algorithms}
+\author{\AuthorName \\ \CourseTerm}
+\date{\ReportDate}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This report compares four page replacement policies---OPT, CLOCK, Rand, and NRU---using a single-level page table with $16$\,KiB (\num{16384}-byte) pages and a parameterized number of physical frames. Experiments use Valgrind lackey memory traces (\texttt{gcc.trace} and \texttt{ls.trace}). OPT serves as the theoretical lower bound on page faults for each trace and frame count.
+\end{abstract}
+
+\section{Introduction}
+
+Demand paging keeps only a subset of a process's pages in RAM; on a page fault, the OS must choose which resident page to replace. The replacement policy strongly influences the page fault rate and the volume of write-back I/O for dirty pages.
+
+\section{Implementation Summary}
+
+\begin{table}[h]
+  \centering
+  \caption{Simulator configuration}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    Item & Setting \\
+    \midrule
+    Page size & $16$\,KiB (\num{16384} bytes) \\
+    Address mapping & \texttt{page = address >> 14} (32-bit addresses) \\
+    Trace events & \texttt{I}, \texttt{L}, \texttt{S}, \texttt{M}; other lines skipped \\
+    Modify (\texttt{M}) & One access; treated as read+write (sets dirty) \\
+    NRU refresh & \texttt{-r = 1000} references between clearing R bits \\
+    Quiet mode & \texttt{-q} suppresses per-access lines when collecting statistics \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Algorithms:}
+\begin{itemize}
+  \item \textbf{OPT:} Evict the resident page whose next use is farthest in the future (implemented efficiently with precomputed next-use indices).
+  \item \textbf{CLOCK:} Second-chance clock using a reference bit.
+  \item \textbf{Rand:} Random victim among resident frames.
+  \item \textbf{NRU:} Four classes from $(R,D)$; periodic R refresh every \num{1000} references.
+\end{itemize}
+
+\section{Methodology}
+
+\begin{enumerate}
+  \item Primary workload: \texttt{gcc.trace} --- \num{1711763} memory accesses.
+  \item Secondary workload: \texttt{ls.trace} --- \num{766387} accesses.
+  \item Frame counts: \num{8}, \num{16}, \num{32}, \num{64}.
+  \item NRU: fixed refresh interval \texttt{-r 1000} for all runs (reasonable middle ground between clearing R too often vs.\ letting R bits go stale).
+\end{enumerate}
+
+\subsection*{Example commands}
+
+\begin{lstlisting}
+./vmsim -q -n 8  -a opt   gcc.trace
+./vmsim -q -n 16 -a clock gcc.trace
+./vmsim -q -n 8  -a nru -r 1000 gcc.trace
+# repeat sweeps over frame counts and algorithms; same pattern for ls.trace
+\end{lstlisting}
+
+\section{Results: \texttt{gcc.trace}}
+
+\subsection{Page faults}
+
+\begin{table}[h]
+  \centering
+  \caption{Total page faults (\texttt{gcc.trace}, NRU with \texttt{-r 1000})}
+  \begin{tabular}{@{}r rrrr@{}}
+    \toprule
+    Frames & OPT & CLOCK & Rand & NRU \\
+    \midrule
+     8 & \num{11357} & \num{20455} & \num{27469} & \num{44116} \\
+    16 &  \num{2581} &  \num{6068} &  \num{7643} &  \num{7544} \\
+    32 &   \num{428} &   \num{844} &  \num{1265} &  \num{1254} \\
+    64 &   \num{113} &   \num{144} &   \num{237} &   \num{508} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Fault counts drop sharply as frames increase; OPT is lowest at each column.
+
+\subsection{Fault ratio vs.\ OPT}
+
+\begin{table}[h]
+  \centering
+  \caption{Ratio of faults to OPT (\texttt{gcc.trace})}
+  \begin{tabular}{@{}r rrr@{}}
+    \toprule
+    Frames & CLOCK/OPT & Rand/OPT & NRU/OPT \\
+    \midrule
+     8 & $1.80\times$ & $2.42\times$ & $3.89\times$ \\
+    16 & $2.35\times$ & $2.96\times$ & $2.92\times$ \\
+    32 & $1.97\times$ & $2.96\times$ & $2.93\times$ \\
+    64 & $1.27\times$ & $2.10\times$ & $4.50\times$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+NRU at \num{64} frames is comparatively worse than CLOCK/Rand on this trace; worth discussing interaction between refresh, class ordering, and locality.
+
+\subsection{Writes to disk (dirty evictions)}
+
+\begin{table}[h]
+  \centering
+  \caption{Total writes to disk (\texttt{gcc.trace})}
+  \begin{tabular}{@{}r rrrr@{}}
+    \toprule
+    Frames & OPT & CLOCK & Rand & NRU \\
+    \midrule
+     8 & \num{1442} & \num{2954} & \num{5327} & \num{1055} \\
+    16 &  \num{309} &  \num{856} & \num{1603} &  \num{367} \\
+    32 &   \num{32} &   \num{88} &  \num{226} &    \num{2} \\
+    64 &    \num{3} &    \num{5} &   \num{29} &    \num{0} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Results: \texttt{ls.trace}}
+
+\begin{table}[h]
+  \centering
+  \caption{Total page faults (\texttt{ls.trace})}
+  \begin{tabular}{@{}r rrrr@{}}
+    \toprule
+    Frames & OPT & CLOCK & Rand & NRU \\
+    \midrule
+     8 & \num{7152} & \num{13484} & \num{19102} & \num{27978} \\
+    16 &  \num{1544} &  \num{4317} &  \num{4719} &  \num{4004} \\
+    32 &   \num{258} &   \num{419} &   \num{651} &   \num{662} \\
+    64 &   \num{104} &   \num{158} &   \num{182} &   \num{217} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \caption{Fault ratio vs.\ OPT (\texttt{ls.trace})}
+  \begin{tabular}{@{}r rrr@{}}
+    \toprule
+    Frames & CLOCK/OPT & Rand/OPT & NRU/OPT \\
+    \midrule
+     8 & $1.89\times$ & $2.67\times$ & $3.91\times$ \\
+    16 & $2.80\times$ & $3.06\times$ & $2.59\times$ \\
+    32 & $1.62\times$ & $2.52\times$ & $2.57\times$ \\
+    64 & $1.52\times$ & $1.75\times$ & $2.09\times$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+On \texttt{ls.trace}, NRU at \num{64} frames is not an outlier the way it is on \texttt{gcc.trace}; workloads differ.
+
+\section{Figures: Page Faults vs.\ Frames}
+
+Upload your exported charts into Overleaf as PDF or PNG. Adjust filenames in \verb|\includegraphics| below if needed.
+
+\begin{figure}[H]
+  \centering
+  % Rename your file to gcc_chart.pdf or change the path:
+  \includegraphics[width=0.92\linewidth]{figures/gcc_chart.pdf}
+  \caption{Page faults vs.\ number of frames (\texttt{gcc.trace}). NRU uses \texttt{-r = 1000}.}
+  \label{fig:gcc}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/ls_chart.pdf}
+  \caption{Page faults vs.\ number of frames (\texttt{ls.trace}). NRU uses \texttt{-r = 1000}.}
+  \label{fig:ls}
+\end{figure}
+
+\noindent\textit{Tip:} If compilation fails because figures are missing, create folder \texttt{figures/} in the Overleaf project and upload charts. PNG works too---change \texttt{.pdf} to \texttt{.png}.
+
+\section{Analysis and Conclusions}
+
+\subsection{Interpreting the comparison to OPT}
+
+OPT is not a competing ``policy'' for a real kernel---it requires knowledge of the entire future reference stream---but it \emph{is} the right baseline: for a fixed trace and a fixed number of frames, no online algorithm can have fewer page faults. The practical question is how close a realizable policy comes on realistic workloads.
+
+On \texttt{gcc.trace}, at \num{8} frames, CLOCK (\num{20455} faults) and Rand (\num{27469}) are about $1.8\times$ and $2.4\times$ OPT respectively, while NRU (\num{44116}) is nearly $3.9\times$ OPT. As memory increases, the story changes. At \num{32} frames, CLOCK, Rand, and NRU are all in a similar band---roughly $2.0$--$2.9\times$ OPT---suggesting that a larger cache shrinks the \emph{structural} gap for these heuristics on this trace, at least until the working set pressure changes. The striking outlier is NRU at \num{64} frames: \num{508} faults vs.\ only \num{113} for OPT and \num{144} for CLOCK. The ratio NRU/OPT jumps to $4.5\times$ even though Rand only sits at $2.1\times$. That is not a small ``implementation detail''; it shows that a policy with a fixed refresh and class-based eviction can be \emph{very} sensitive to the interaction between the refresh period, the R/D classification, and the particular reference pattern of a long-running compile.
+
+On \texttt{ls.trace}, the same NRU configuration does \emph{not} show the same pathology: at \num{64} frames, NRU's ratio to OPT is about $2.1\times$---in line with Rand. The same algorithm, the same \texttt{-r = 1000}, but a different program and locality. This is the main lesson: \textbf{no single} $-r$ \textbf{or static classification scheme is guaranteed to track ``recency'' well on every trace.} A report that only used \texttt{gcc.trace} might recommend against NRU; a report that only used \texttt{ls.trace} would understate that risk.
+
+\subsection{CLOCK vs.\ Rand}
+
+CLOCK is a standard approximation to LRU: it uses a single reference bit and a circular scan, so the cost per replacement is bounded and the implementation is easy to reason about. Here, CLOCK consistently beats Rand on both traces. At \num{8} frames on \texttt{gcc.trace}, for example, CLOCK's fault count is about $25\%$ lower than Rand's. Random replacement has a certain appeal in contrived settings (no extra bits, no pointer manipulation), but it ignores both recency and frequency, and the trace shows the cost. If the random number generator is not fixed to a seed, a single run of Rand is one sample from a distribution; the gap to CLOCK could vary, but it is unlikely to close entirely without ``luck.''
+
+\subsection{NRU, refresh, and the \texttt{gcc} outlier at \num{64} frames}
+
+NRU evicts from the lowest $(R,D)$ class; the periodic refresh clears $R$ so that pages that are not re-touched within the refresh window appear ``not recently used.'' When that classification aligns with the real reuse horizon of the program, NRU performs well; when it misaligns---for example, if important pages lose their $R$ bit just before they are needed again---faults can spike. The poor NRU result at \num{64} frames on \texttt{gcc.trace} while NRU does well at \num{32} on the same trace suggests that \textbf{more frames are not always easier for NRU}: with more resident pages, refresh-driven misclassification or victim choice within a class can interact badly with the phase behavior of the workload. Tuning \texttt{-r} (or using an adaptive refresh) would be the next step in a longer study; the assignment's fixed refresh is enough to show that NRU is \emph{not} ``set and forget.''
+
+\subsection{Writes to disk}
+
+Fault counts are the headline metric, but dirty evictions matter for I/O and latency. On \texttt{gcc.trace}, OPT's dirty writebacks fall from \num{1442} at \num{8} frames to \num{3} at \num{64}, reflecting fewer evictions overall. NRU shows very few dirty evictions at \num{32}/\num{64} in these runs because the policy often evicts pages that are not dirty at eviction time; that can be good for I/O even when fault counts are high. Interpreting dirty counts alongside faults gives a fuller picture than faults alone.
+
+\subsection{Scaling with the number of frames}
+
+Doubling frames from \num{8} to \num{16} cuts OPT faults on \texttt{gcc.trace} by more than a factor of four (\num{11357} $\rightarrow$ \num{2581}); doubling again to \num{32} yields another large drop (\num{428}). By \num{64}, OPT is already near \num{113} faults---the curve is strongly convex. That pattern is typical: the first additional frames buy the most because they capture the hottest portion of the working set; later frames capture long-tail cold pages that matter less per dollar of RAM. Policies that track locality well (here, CLOCK relative to Rand) capture more of that benefit at moderate frame counts.
+
+\subsection{What would you ship in a real operating system?}
+
+OPT is a mathematical benchmark, not a shipping policy. Between the practical policies in this assignment:
+
+\begin{itemize}
+  \item \textbf{CLOCK} (and related approximations to LRU) emerge as the strongest default story from these traces: predictable implementation, bounded work per eviction, and fault counts consistently closer to OPT than Rand.
+  \item \textbf{Rand} is simple but wasteful on structured workloads like compilation and file utilities; it may still appear in specialized contexts where deterministic behavior is undesirable, but it is a poor general-purpose choice when reference locality exists.
+  \item \textbf{NRU} can be competitive (see \texttt{ls.trace} and moderate frame counts on \texttt{gcc.trace}) but requires careful tuning of refresh and is trace-sensitive; it illustrates why production systems often invest in \emph{global} replacement heuristics and adaptive behavior rather than a single static scheme.
+\end{itemize}
+
+If forced to pick one policy from this experiment for a teaching kernel or a small embedded OS without heavy machinery, \textbf{CLOCK} is the most defensible balance of performance, complexity, and stability across both traces.
+
+\subsection{Limitations}
+
+These conclusions rest on two traces, one NRU refresh value, and (for Rand) a single stochastic run unless a fixed seed is used. Additional traces and sweeps over \texttt{-r} would be needed to generalize claims beyond ``on these workloads, with these parameters.''
+
+\section*{Acknowledgments / Data}
+
+Memory traces were produced with Valgrind lackey as provided for the course. The \texttt{-q} flag was used to avoid printing $\sim$\num{1.7}M per-access lines for \texttt{gcc.trace} when collecting summaries.
+
+\end{document}
